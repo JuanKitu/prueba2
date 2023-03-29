@@ -7,7 +7,7 @@ export class MqService {
   private readonly logger = new Logger(MqService.name);
 
   private qMgr = 'cc0e3f504680';
-  private qName = 'DEV.ADMIN.SVRCONN';
+  private qName = 'DEV.ADMIN.SVRCON';
 
   private ghObj: mq.MQObject;
   private ghConn: mq.MQQueueManager;
