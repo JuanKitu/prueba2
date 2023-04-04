@@ -30,7 +30,7 @@ export class MqService {
       bytes.push(parseInt(hex.substr(c, 2), 16));
     return bytes;
   }
-  private getMessages() {
+  getMessages() {
     const md = new mq.MQMD();
     const gmo = new mq.MQGMO();
 
@@ -85,7 +85,18 @@ export class MqService {
       'and opening queue',
       this.qName,
     );
-    mq.Conn(this.qMgr, (err, conn) => {
+    const cno = new mq.MQCNO();
+    const csp = new mq.MQCSP();
+    const cd = new mq.MQCD();
+    csp.UserId = 'admin';
+    csp.Password = 'passw0rd';
+    cno.SecurityParms = csp;
+    cno.ApplName = 'prueba';
+    cd.ConnectionName = 'localhost(1414)';
+    cd.ChannelName = 'DEV.ADMIN.SVRCONN';
+    cno.ClientConn = cd;
+    cno.Options = MQC.MQCNO_NONE;
+    mq.Connx(this.qMgr, cno, (err, conn) => {
       if (err) {
         console.log(this.formatErr(err));
         this.exitCode = 1;
@@ -170,7 +181,7 @@ export class MqService {
       })
       .then((hObj) => {
         this.logger.log('MQOPEN of %s successful', this.qName);
-        const msg = 'Hello from Nest.js at ' + new Date().toString();
+        const msg = 'test library by kitu ' + new Date().toString();
 
         const mqmd = new mq.MQMD();
         const pmo = new mq.MQPMO();
