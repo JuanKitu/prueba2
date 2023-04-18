@@ -4,7 +4,7 @@ import { MQC } from 'ibmmq';
 
 @Injectable()
 export class IbmmqService {
-  private qMgr = 'QM1';
+  private qMgr = '4407e90d0f5c';
   private qName = 'DEV.QUEUE.1';
 
   async sendToQueue(message: string) {
@@ -19,9 +19,7 @@ export class IbmmqService {
     const mqmd = new mq.MQMD();
     const pmo = new mq.MQPMO();
     pmo.Options =
-      MQC.MQPMO_NO_SYNCPOINT |
-      MQC.MQPMO_NEW_MSG_ID |
-      MQC.MQPMO_NEW_CORREL_ID;
+      MQC.MQPMO_NO_SYNCPOINT | MQC.MQPMO_NEW_MSG_ID | MQC.MQPMO_NEW_CORREL_ID;
     await mq.PutPromise(hObj, mqmd, pmo, message);
     await mq.ClosePromise(hObj, 0);
     await mq.DiscPromise(conn);
