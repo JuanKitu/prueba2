@@ -7,7 +7,6 @@ import {
 import { StringDecoder } from 'string_decoder';
 import * as mq from 'ibmmq';
 import { MQC } from 'ibmmq';
-import { GetResult } from './mq.interface';
 
 @Injectable()
 export class MqService implements OnModuleInit, OnModuleDestroy {
@@ -15,16 +14,18 @@ export class MqService implements OnModuleInit, OnModuleDestroy {
 
   private qMgr = 'QM1';
   private qName = 'DEV.QUEUE.1';
-  private readonly waitInterval = 3;
+  private readonly waitInterval = 4;
   private msgId: string | null = null;
   private connectionHandle: mq.MQQueueManager;
   private queueHandle: mq.MQObject;
   private ok = true;
   private exitCode = 0;
-  private storedMessage: string;
   private readonly decoder = new StringDecoder('utf8');
   private formatErr(err: Error) {
     return 'MQ call failed in ' + err.message;
+  }
+  private async delay(delayMs) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
   private hexToBytes(hex: string): number[] {
@@ -39,52 +40,53 @@ export class MqService implements OnModuleInit, OnModuleDestroy {
       const gmo = new mq.MQGMO();
 
       gmo.Options =
-        MQC.MQGMO_NO_SYNCPOINT |
-        MQC.MQGMO_WAIT |
+        MQC.MQGMO_SYNCPOINT |
+        MQC.MQGMO_NO_WAIT |
         MQC.MQGMO_CONVERT |
         MQC.MQGMO_FAIL_IF_QUIESCING;
       gmo.MatchOptions = MQC.MQMO_NONE;
-      gmo.WaitInterval = this.waitInterval * 1000; // 3 seconds
+      //gmo.WaitInterval = this.waitInterval * 1000; // 3 seconds
 
       if (this.msgId != null) {
         gmo.MatchOptions = MQC.MQMO_MATCH_MSG_ID;
         md.MsgId = Buffer.from(this.hexToBytes(this.msgId));
       }
       mq.setTuningParameters({ getLoopPollTimeMs: 500 });
-      const result = await this.getPromise(this.queueHandle, md, gmo);
-      return {
-        message: this.getCB(
-          result.err,
-          result.hObj,
-          result.gmo,
-          result.md,
-          result.buf,
-          result.hconn,
-        ),
-      };
+      return await this.getArrayMessages(this.queueHandle, md, gmo);
+      mq.GetDone(this.queueHandle);
     } catch (err) {
       console.log(err);
       return err;
     }
   }
-  private getPromise(queueHandle: any, md: any, gmo: any): Promise<GetResult> {
-    return new Promise((resolve, reject) => {
+  private getArrayMessages(
+    queueHandle: mq.MQObject,
+    md: mq.MQMD,
+    gmo: mq.MQGMO,
+  ): Promise<string[]> {
+    const messages: string[] = [];
+    return new Promise(async (resolve, reject) => {
       mq.Get(queueHandle, md, gmo, (err, hObj, gmo, md, buf, hconn) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({ err, hObj, gmo, md, buf, hconn });
-        }
+        const message = this.getCB(err, hObj, gmo, md, buf, hconn);
+        messages.push(message);
       });
+      await this.delay(this.waitInterval * 100);
+      resolve(messages);
     });
   }
-  private getCB(err, hObj, gmo, md, buf, hconn) {
+  private getCB(
+    err: mq.MQError | null,
+    hObj: mq.MQObject,
+    gmo: mq.MQGMO,
+    md: mq.MQMD,
+    buf: Buffer | null,
+    hconn: mq.MQQueueManager,
+  ) {
     let message: string;
     if (err) {
       if (err.mqrc == MQC.MQRC_NO_MSG_AVAILABLE) {
-        console.log('No more messages available.');
       } else {
-        console.log(this.formatErr(err), 'XD5');
+        console.log(this.formatErr(err));
         this.exitCode = 1;
       }
       this.ok = false;
@@ -136,7 +138,6 @@ export class MqService implements OnModuleInit, OnModuleDestroy {
       const obj = await mq.OpenPromise(this.connectionHandle, od, openOptions);
       console.log('MQOPEN of', this.qName, 'successful');
       this.queueHandle = obj;
-      //this.getMessages();
     } catch (err) {
       this.ok = false;
       this.exitCode = 1;
