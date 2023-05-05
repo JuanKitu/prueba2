@@ -14,17 +14,17 @@ export class MqService implements OnModuleInit, OnModuleDestroy {
 
   private qMgr = 'QM1';
   private qName = 'DEV.QUEUE.1';
-  private readonly waitInterval = 4;
+  private readonly waitInterval = 1;
   private msgId: string | null = null;
   private connectionHandle: mq.MQQueueManager;
   private queueHandle: mq.MQObject;
   private ok = true;
   private exitCode = 0;
-  private readonly decoder = new StringDecoder('utf8');
-  private formatErr(err: Error) {
+  private readonly decoder: StringDecoder = new StringDecoder('utf8');
+  private formatErr(err: Error): string {
     return 'MQ call failed in ' + err.message;
   }
-  private async delay(delayMs) {
+  private async delay(delayMs): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
@@ -34,26 +34,30 @@ export class MqService implements OnModuleInit, OnModuleDestroy {
       bytes.push(parseInt(hex.substr(c, 2), 16));
     return bytes;
   }
-  async getMessages() {
+  async getMessages(): Promise<string[]> {
     try {
       const md = new mq.MQMD();
       const gmo = new mq.MQGMO();
 
       gmo.Options =
-        MQC.MQGMO_SYNCPOINT |
-        MQC.MQGMO_NO_WAIT |
+        MQC.MQGMO_NO_SYNCPOINT |
+        MQC.MQGMO_WAIT |
         MQC.MQGMO_CONVERT |
         MQC.MQGMO_FAIL_IF_QUIESCING;
       gmo.MatchOptions = MQC.MQMO_NONE;
-      //gmo.WaitInterval = this.waitInterval * 1000; // 3 seconds
+      gmo.WaitInterval = this.waitInterval * 1000; // 3 seconds
 
       if (this.msgId != null) {
         gmo.MatchOptions = MQC.MQMO_MATCH_MSG_ID;
         md.MsgId = Buffer.from(this.hexToBytes(this.msgId));
       }
       mq.setTuningParameters({ getLoopPollTimeMs: 500 });
-      return await this.getArrayMessages(this.queueHandle, md, gmo);
-      mq.GetDone(this.queueHandle);
+      const messages: string[] = await this.getArrayMessages(
+        this.queueHandle,
+        md,
+        gmo,
+      );
+      return messages.filter((message: string) => message);
     } catch (err) {
       console.log(err);
       return err;
@@ -70,7 +74,7 @@ export class MqService implements OnModuleInit, OnModuleDestroy {
         const message = this.getCB(err, hObj, gmo, md, buf, hconn);
         messages.push(message);
       });
-      await this.delay(this.waitInterval * 100);
+      await this.delay((this.waitInterval + 2) * 1000);
       resolve(messages);
     });
   }
@@ -81,7 +85,7 @@ export class MqService implements OnModuleInit, OnModuleDestroy {
     md: mq.MQMD,
     buf: Buffer | null,
     hconn: mq.MQQueueManager,
-  ) {
+  ): string {
     let message: string;
     if (err) {
       if (err.mqrc == MQC.MQRC_NO_MSG_AVAILABLE) {
@@ -100,7 +104,7 @@ export class MqService implements OnModuleInit, OnModuleDestroy {
     }
     return message;
   }
-  private async start() {
+  private async start(): Promise<void> {
     const myArgs = process.argv.slice(2); // Remove redundant parms
     if (myArgs[0]) {
       this.qName = myArgs[0];
@@ -145,7 +149,7 @@ export class MqService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async stop() {
+  private async stop(): Promise<number> {
     if (this.ok) {
       console.log('Disconnecting from queue manager', this.qMgr);
       await this.cleanup(this.connectionHandle, this.queueHandle);
@@ -154,17 +158,20 @@ export class MqService implements OnModuleInit, OnModuleDestroy {
     return this.exitCode;
   }
 
-  private async cleanup(hConn: mq.MQQueueManager, hObj: mq.MQObject) {
+  private async cleanup(
+    hConn: mq.MQQueueManager,
+    hObj: mq.MQObject,
+  ): Promise<void> {
     try {
       await mq.ClosePromise(hObj, 0);
       console.log('MQCLOSE successful');
       await mq.DiscPromise(hConn);
       console.log('MQDISC successful');
     } catch (closeErr) {
-      console.log(this.formatErr(closeErr), 'XD3');
+      console.log(this.formatErr(closeErr));
     }
   }
-  async putMessage(message: string) {
+  async putMessage(message: string): Promise<void> {
     const msg = `${message} ${new Date().toString()}`;
     const mqmd = new mq.MQMD();
     const pmo = new mq.MQPMO();
